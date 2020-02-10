@@ -119,7 +119,7 @@ dados <- prepareData(x=Predictors, p=ocor3[,1:2], b=back2[,1:2])
 
 # How many times the models are going to run
 ## In the first run, use as a test - repeticao = 1
-repeticao=1
+#repeticao=1
 #repeticao = 20
 
 
