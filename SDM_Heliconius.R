@@ -27,27 +27,16 @@ library(glm2)
 #### All the layers need to be with the same extent and resoltuion.
 
 # List new raster files with right resolution and extent
-predictors <- list.files(path="/Volumes/ananda_rpm/SDM/predictors/resolucao_ext",pattern =".tif", full.names = TRUE)
-predictors
+predictors <- list.files(path="/home/anandam/project/anandam/SDM/predictors/for_test/",pattern =".tif", full.names = TRUE)
 #  raster the objects from the list
 predictors2 <- lapply(predictors, raster)
-predictors2
 
 # STACK PREDICTORS - PUT ALL THE PREDICTORS IN THE SAME FILE (AS A LIST)
 predictors<-stack(predictors2)
-predictors
-
-# CHECK IF PREDICTORS IS CORRECTED - CHOOSE ONE PREDICTOR TO VISUALIZE. EX: number 3
-plot(predictors[[3]])
-# ADD MAP OUTLINES (Optional)
-map(add=T)
 
 # LOAD OCCURRENCE OF H. melpomene melpomene
-setwd("/Volumes/ananda_rpm/SDM/ocorrencias")
+setwd("/home/anandam/project/anandam/SDM/ocur/")
 ocor <- read.table("mel_filtered_rosser_ananda.txt", h=T)
-ocor
-# ADD POINTS OF OCOR IN THE MAP. # Just to check if the data is visually correct
-points(ocor, col='blue')
 
 # JOIN THE OCCURRENCE POINTS INFORMATION WITH THE ENVIRONMENTAL VARIABLES INFORMATION (PS: Long first and lat)
 ### Makes a table with cell information: it is the cellgrid with values of the predictors
@@ -69,31 +58,10 @@ ocor2<-ocor1[which(id.dup==FALSE),]
 # Excluding NA lines. I don't think I have that because I made this step while organizing the occurance table, but just in case it is better to do.
 ocor3<-na.omit(ocor2)
 
-# Check how the data is organized
-head(ocor3)
-
 
 ######################
 ###################### PART 2 -  SELECT PREDICTORS
 ######################
-
-# CHECK PREDICTORS CORRELATIONS 
-# If your predictors are correlated, you need to choose one. This choice depends of what
-# you know about the species. Ex: Max and Mean temp are correlated and you chose to
-# keep mean temp if this is more important for the sp physiology.
-# Another way to choose variables is performing a multivariate analysis in which you
-# variable axes instead of excluding some.
-
-# CORRELATIONS
-variables <- ocor3[,3:35]
-# Here you are selecting all the rows from the columns 3 to 35 which corresponds to the environmental variables. The first 2 columns 
-# ... corresponds the coordinates info and are not necessary for the correlation step.
-# Check object ocor3 to know how many columns you have
-
-# Calculates correlation
-correl <- (cor(variables)>0.7)*1 # 0.7 as parameter
-write.csv2 (correl, "/Volumes/ananda_rpm/SDM/correlations/correlacao_mel.csv")
-View(correl)
 
 # After decide which variables to keep. Copy just the varibles of interest in a
 # diferent directory -  pick ones which are most ecologically relevant to your species
@@ -101,19 +69,13 @@ View(correl)
 # or check which layers you are going to include and separate them based on the number of the correlation table.
 
 # RENAME PREDICTORS - SEPARATE THE PREDICTORS OF INTEREST
-layers <- c(1,4,7,9,10,13,15:21,23,24,27,28,31)
+layers <- c(1:5)
 Predictors <- stack(predictors[[layers]])
 
-## RENAME PREDICTORS
 # Check the order of layers in the correlation table
 Predictors # check last line
-bioclim_names<-c("mean temperature", "annual precipitation", "precipitation seasonality", "precipitation of driest quarter", "preciptation of warmest quarter",
-                 "soil PH", "soil organic carbon", "soil clay content %", "soil sand content %", "soil silt content %", "NDVI", "percentage of tree cover",
-                 "canopy height", "isothermality", "wind speed", "elevation", "temperature seasonality", "temperature annual range")
+bioclim_names<-c("soil PH", "soil clay content %", "soil sand content %", "soil silt content %", "NDVI")
 names(Predictors)<-bioclim_names
-# Check one of the predictors
-plot(Predictors[[18]])
-
 
 ######################
 ###################### PART 3 -  BACKGROUND POINTS
@@ -142,10 +104,6 @@ bg2 <-bg[1:nrow(ocor3),]
 back <- extract(Predictors, bg2)
 # Combine points of background coordinates and environmental information of the extracted cells
 back2<-cbind(bg2, back)
-# Check if worked using predictor 3
-plot(Predictors[[3]])
-# Plot pseudo-abscence (background)
-points(bg2, pch=20, col="red")
 
 ## back2 and ocor3 are two similar objects with longitude and latitude information
 ## ... and predictors information for each coordinate. The difference is that ocor3
@@ -154,8 +112,6 @@ points(bg2, pch=20, col="red")
 # Create a data frame including pb (1 presence, 0 absence) and the predictor values 
 # Join the information of the predictors values and the coordinates (columns 1 and 2) for the presence (p=ocor3) and background points (b=back2)
 dados <- prepareData(x=Predictors, p=ocor3[,1:2], b=back2[,1:2])
-head(dados)
-tail(dados)
 
 ######################
 ###################### PART 4 -  MODELS
@@ -163,8 +119,8 @@ tail(dados)
 
 # How many times the models are going to run
 ## In the first run, use as a test - repeticao = 1
-#repeticao=1
-repeticao = 20
+repeticao=1
+#repeticao = 20
 
 
 # RUNNING ALGORITHMS
@@ -178,12 +134,13 @@ bioclim0k<-maha0k<-maxent0k<-GLM0k<-RF0k<-stack()
 bioclim.e<-maha.e<-maxent.e<-GLM.e<-RF.e<-NULL
 bioclim.t<-maha.t<-maxent.t<-GLM.t<-RF.t<-NULL
 
+### 75% of occurance points is used for training. Round is to avoid broken numbers
+id.treino<-sample(1:nrow(ocor3),round(0.75*nrow(ocor3),0))
+## treino is the object used for training the model. id.treino is to keep just the lines of id.treino. Which means 75% of the ocor3 and back2
+treino<-prepareData(x=Predictors, p=ocor3[id.treino,1:2], b=back2[id.treino,1:2])
+## -id.treino is to take out the the ones used for id.treino. Which means 25% of ocor3 and back2
+teste<-prepareData(x=Predictors, p=ocor3[-id.treino,1:2], b=back2[-id.treino,1:2])
 
-for(i in 1:repeticao){ # number of repetitions. repeticao=1 for test
-  id.treino<-sample(1:nrow(ocor3),round(0.75*nrow(ocor3),0))  ### 75% of occurance points for training. Round is to avoid broken numbers
-  treino<-prepareData(x=Predictors, p=ocor3[id.treino,1:2], b=back2[id.treino,1:2])  ## id.treino is to keep just the lines of id.treino. Which means 75% of the ocor3 and back2
-  teste<-prepareData(x=Predictors, p=ocor3[-id.treino,1:2], b=back2[-id.treino,1:2])  ## -id.treino is to take out the the ones used for id.treino. Which means 25% of ocor3 and back2
-  
   # The object id.treino takes randonmly 75% of the occurance coordinates to use for the models and tests.
   # The object treino takes the environmental variables values for the points randomly selected in id.treino for both presence and background points. This object is going to be used to model the distribution.
   # The object test is pretty much the same as the 'treino' but uses the 25% of occurance that was not used for treino and it is used to test de models. 
@@ -192,10 +149,13 @@ for(i in 1:repeticao){ # number of repetitions. repeticao=1 for test
   ## 1) Bioclim [profile algorithm]
   
   #### Adjusting the model
-  bioclim.modelo<-bioclim(treino[treino[,"pb"]==1,-1]) ## [treino[,"pb"]==1 is to run just the training column that has 1 (presence). -1 is to take out the column 'pb'
+  # Create an object for the training column that has 1 (presence). -1 is to take out the column 'pb'.
+  # For Bioclim model we only use presence data
+  train <- treino[treino[,"pb"]==1,-1]
+  bioclim.modelo<-lapply(train,bioclim)
   #plot(bioclim.modelo)
   #response(bioclim.modelo)
-  
+
   # Making predictions
   bioclim0k<-stack(bioclim0k, predict(object=bioclim.modelo, x=Predictors, progress='text'))  
   #plot(bioclim0k)
@@ -296,4 +256,4 @@ write.table(data.frame(bioclim=bioclim.t, mahal=maha.t,maxent=maxent.t, glm2=GLM
 
 
 # Save workspace
-save.image(file = "/Volumes/ananda_rpm/SDM/workspace/model_melpomene.rda")
+save.image(file = "/home/anandam/project/anandam/SDM/predictors/for_test/test_model_melpomene.rda")
